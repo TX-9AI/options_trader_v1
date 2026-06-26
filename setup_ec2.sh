@@ -116,7 +116,7 @@ print_ok "Telegram configured."
 # ─── STEP 4: SYSTEM PACKAGES ─────────────────────────────────────────────────
 print_step "4/7" "System packages"
 sudo apt-get update -qq
-sudo apt-get install -y -qq python3 python3-pip python3-venv git rsync bc sqlite3
+sudo apt-get install -y -qq python3 python3-pip python3-venv python-is-python3 git rsync bc sqlite3
 print_ok "System packages ready."
 
 # ─── STEP 5: INSTALL FILES ───────────────────────────────────────────────────
@@ -215,6 +215,11 @@ if [ "$STATUS" = "active" ]; then
     echo -e "    bash configure.sh                  — change settings"
     echo ""
     source "${VENV}/bin/activate" && python "$INSTALL_DIR/status.py"
+    echo ""
+    echo "  Loading environment..."
+    export PATH="$VENV/bin:$PATH"
+    cd "$INSTALL_DIR"
+    exec bash --login
 else
     echo ""
     echo -e "${BOLD}${YELLOW}⚠️  Service did not start. Check:${RESET}"
@@ -222,3 +227,8 @@ else
     echo ""
     journalctl -u ${SERVICE_NAME} -n 20 --no-pager
 fi
+
+# Always end in the install dir with venv active
+export PATH="$VENV/bin:$PATH"
+cd "$INSTALL_DIR"
+exec bash --login
