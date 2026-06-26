@@ -59,8 +59,10 @@ def pct(val):
     return f"{sign}{val:.1%}"
 
 def usd(val):
-    sign = "+" if val >= 0 else ""
-    return f"{sign}${abs(val):,.2f}" if val < 0 else f"+${val:,.2f}"
+    if val >= 0:
+        return f"+${val:,.2f}"
+    else:
+        return f"-${abs(val):,.2f}"
 
 
 # ── Data fetchers ─────────────────────────────────────────────
@@ -83,9 +85,11 @@ def get_regime_and_orb():
     regime = "UNKNOWN"
     strategy = "UNKNOWN"
     orb_state = "UNKNOWN"
+    gex_pin = None
+    gex_env = None
 
     if not os.path.exists(log_path):
-        return regime, strategy, orb_state
+        return regime, strategy, orb_state, gex_pin, gex_env
 
     try:
         # Read last 500 lines — recent enough, cheap enough
@@ -119,13 +123,22 @@ def get_regime_and_orb():
                 elif "EXPIRED"       in line: orb_state = "Expired (past 2PM)"
                 elif "reset"         in line: orb_state = "Waiting for 9:35 ET"
 
+            if "GEX computed:" in line and gex_pin is None:
+                try:
+                    if "pin=$" in line:
+                        gex_pin = line.split("pin=$")[1].split()[0].rstrip(")")
+                    if "env=" in line:
+                        gex_env = line.split("env=")[1].split()[0]
+                except Exception:
+                    pass
+
             if regime != "UNKNOWN" and strategy != "UNKNOWN" and orb_state != "UNKNOWN":
                 break
 
     except Exception:
         pass
 
-    return regime, strategy, orb_state
+    return regime, strategy, orb_state, gex_pin, gex_env
 
 
 def get_open_trade():
@@ -189,10 +202,13 @@ def main():
     sep()
 
     # ── Regime & ORB ─────────────────────────────────────────
-    regime, strategy, orb_state = get_regime_and_orb()
+    regime, strategy, orb_state, gex_pin, gex_env = get_regime_and_orb()
     print(f"  📊 Regime:      {regime}")
     print(f"  🎯 Strategy:    {strategy}")
     print(f"  ⏱  ORB state:   {orb_state}")
+    if gex_pin:
+        gex_icon = "📌" if gex_env == "PINNING" else "📈" if gex_env == "TRENDING" else "➖"
+        print(f"  {gex_icon} GEX pin:     ${gex_pin}  ({gex_env})")
     print()
     sep()
 

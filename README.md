@@ -85,7 +85,14 @@ Risk per trade: `$200` (configurable in config.py)
 
 ## Deployment
 
-### First-time EC2 setup (Windows)
+### Option 1 — Web install (mobile / Terminus / any SSH client)
+SSH into a fresh EC2 and run:
+```bash
+curl -fsSL https://raw.githubusercontent.com/TX-9AI/options_trader_v1/main/install.sh -o install.sh && bash install.sh
+```
+Have ready: TastyTrade username & password, Telegram bot token & chat ID.
+
+### Option 2 — Local install (Windows desktop)
 1. Unpack to `C:\options_trader_v1\`
 2. Place `tx-9.pem` in `C:\options_trader\`
 3. Double-click `install.bat`

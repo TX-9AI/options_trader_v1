@@ -183,27 +183,14 @@ def attempt_new_entry(ctx: dict, regime: RegimeState, state: BotState):
     entry_eng = get_entry_engine(state.paper_trading)
 
     # ── Session gate ──────────────────────────────────────────────────────────
-    # Standard check (non-butterfly). Butterfly strategies check separately below.
-    can_enter, reason = session.can_enter(ctx["macro"], is_butterfly=False)
+    can_enter, reason = session.can_enter(ctx["macro"])
     if not can_enter:
-        # Still allow butterfly even if standard entries are blocked
-        butterfly_ok, _ = session.can_enter(ctx["macro"], is_butterfly=True)
-        if not butterfly_ok:
-            logger.debug(f"Entry blocked: {reason}")
-            return
-        # Standard entries blocked but butterfly OK — skip to butterfly only
-        _skip_to_butterfly = True
-    else:
-        _skip_to_butterfly = False
-
-    # ── Circuit breaker gate ──────────────────────────────────────────────────
-    cb = risk_mgr.check_circuit_breaker()
-    if cb.any_active:
-        logger.info(f"BLOCKED: circuit breaker — {cb.reason}")
+        logger.debug(f"Entry blocked: {reason}")
         return
 
+
     # ── Fetch options chain (shared across strategies) ────────────────────────
-    chain = get_chain_fetcher().fetch_chain()
+    chain = ctx.get("chain") or get_chain_fetcher().fetch_chain()
     if chain is None:
         logger.warning("Could not fetch options chain — skipping entry attempt")
         return
@@ -214,8 +201,7 @@ def attempt_new_entry(ctx: dict, regime: RegimeState, state: BotState):
     # ── Strategy dispatch: regime → strategy ──────────────────────────────────
     # Priority 1: ORB (if confirmed AND regime is trending or breakout)
     orb = ctx["orb"]
-    if (not _skip_to_butterfly and
-            orb.state in (ORBState.CONFIRMED_LONG, ORBState.CONFIRMED_SHORT) and
+    if (orb.state in (ORBState.CONFIRMED_LONG, ORBState.CONFIRMED_SHORT) and
             regime.primary_regime in (
                 Regime.TRENDING_BULL, Regime.TRENDING_BEAR,
                 Regime.BREAKOUT_VOLATILE, Regime.RANGING, Regime.COMPRESSION
@@ -233,7 +219,7 @@ def attempt_new_entry(ctx: dict, regime: RegimeState, state: BotState):
             get_orb_engine().mark_triggered()
 
     # Priority 2: Sweep Reversal
-    if signal is None and not _skip_to_butterfly and regime.primary_regime == Regime.SWEEP_REVERSAL:
+    if signal is None and regime.primary_regime == Regime.SWEEP_REVERSAL:
         signal = _sweep_strategy.generate_signal(
             regime        = regime,
             vol_state     = ctx["vol"],
@@ -389,9 +375,23 @@ def main_loop(state: BotState):
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
 
+            # ── Compute GEX every tick (used by all strategies + position mgr)
+            try:
+                from data.options_chain import get_chain_fetcher
+                from data.gex_data import compute_gex as _compute_gex
+                _gex_chain = get_chain_fetcher().fetch_chain()
+                if _gex_chain:
+                    ctx["gex"]   = _compute_gex(_gex_chain, ctx["price"])
+                    ctx["chain"] = _gex_chain
+            except Exception as _gex_err:
+                logger.warning(f"GEX tick fetch failed: {_gex_err}")
+
             # ── Manage open position ──────────────────────────────────────
             if pos_mgr.has_open_position():
-                pos_mgr.manage_open_position()
+                pos_mgr.manage_open_position(
+                    chain=ctx.get("chain"),
+                    df_1m=ctx.get("df_1m")
+                )
             else:
                 attempt_new_entry(ctx, regime, state)
 

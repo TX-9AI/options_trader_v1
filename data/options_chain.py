@@ -22,7 +22,7 @@ from tastytrade.instruments import get_option_chain, Option as TTOption, OptionT
 from tastytrade.dxfeed import Greeks, Quote
 from tastytrade import DXLinkStreamer
 
-from data.tasty_client import get_session, get_loop, TastyClientError
+from data.tasty_client import get_session, get_loop, run_async, TastyClientError
 from config import (
     INSTRUMENT, STRIKE_INCREMENT, CONTRACT_MULTIPLIER,
     SWEEP_TARGET_DELTA, SWEEP_DELTA_TOLERANCE
@@ -90,7 +90,7 @@ class OptionsChainFetcher:
             session = get_session()
 
             # Step 1: Get full option chain (all expirations, no pricing)
-            chain_map = get_option_chain(session, symbol)
+            chain_map = run_async(get_option_chain(session, symbol))
 
             if not chain_map:
                 logger.warning(f"Empty option chain for {symbol}")
@@ -156,9 +156,19 @@ class OptionsChainFetcher:
                 puts       = puts_raw,
             )
 
+            # Populate spot_price from ATM call (nearest delta to 0.50)
+            liquid_calls = [c for c in chain.calls if c.delta > 0 and c.mark > 0]
+            if liquid_calls:
+                try:
+                    atm = min(liquid_calls, key=lambda c: abs(c.delta - 0.50))
+                    chain.spot_price = atm.strike
+                except Exception:
+                    pass
+
             logger.info(
                 f"Chain built: {symbol} {today_str} "
-                f"calls={len(chain.calls)} puts={len(chain.puts)}"
+                f"calls={len(chain.calls)} puts={len(chain.puts)} "
+                f"spot~=${chain.spot_price:.0f}"
             )
             return chain
 
