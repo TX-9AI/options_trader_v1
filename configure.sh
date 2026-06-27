@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
-#  options_trader v1.0  —  Live Configuration Manager
+#  options_trader v1.1  —  Live Configuration Manager
+#  v1.1 — 2026-06-27 — replaced SMS/Twilio with Telegram
 #
 #  Run this anytime to view or change bot settings.
 #  Changes take effect on the NEXT bot start — the bot is
@@ -80,7 +81,8 @@ show_config() {
     risk=$(get_env "OT_RISK_USD")
     paper=$(get_env "OT_PAPER_TRADING")
     account=$(get_env "TT_ACCOUNT_NUMBER")
-    twilio_on=$(get_env "TWILIO_ACCOUNT_SID")
+    telegram_token=$(get_env "TELEGRAM_TOKEN")
+    telegram_chat=$(get_env "TELEGRAM_CHAT_ID")
 
     local mode_label
     if [[ "$paper" == "False" ]]; then
@@ -103,7 +105,13 @@ show_config() {
     echo -e "  Risk per trade: ${BOLD}\$${risk:-not set}${RESET}"
     echo -e "  Trading mode:   $(echo -e $mode_label)"
     echo -e "  TT Account:     ${BOLD}${account:-not set}${RESET}"
-    echo -e "  SMS alerts:     ${BOLD}$([ -n "$twilio_on" ] && echo "✓ enabled" || echo "— disabled")${RESET}"
+    local tg_status
+    if [[ -n "$telegram_token" ]]; then
+        tg_status="✓ enabled (chat ${telegram_chat})"
+    else
+        tg_status="— disabled"
+    fi
+    echo -e "  Telegram:       ${BOLD}${tg_status}${RESET}"
     echo -e "  ─────────────────────────────────────────"
     echo ""
 
@@ -226,74 +234,42 @@ change_tt_credentials() {
     fi
 }
 
-change_twilio() {
-    local current_sid
-    current_sid=$(get_env "TWILIO_ACCOUNT_SID")
+change_telegram() {
+    local current_token current_chat
+    current_token=$(get_env "TELEGRAM_TOKEN")
+    current_chat=$(get_env "TELEGRAM_CHAT_ID")
     echo ""
 
-    if [[ -n "$current_sid" ]]; then
-        echo -e "  SMS alerts are currently ${GREEN}enabled${RESET}."
-        echo ""
-        echo -e "  ${BOLD}1.${RESET} Update SMS settings"
-        echo -e "  ${BOLD}2.${RESET} Disable SMS alerts"
-        echo -e "  ${BOLD}3.${RESET} Cancel"
-        echo ""
-        read -p "    Select [1/2/3]: " sms_choice
-        case "$sms_choice" in
-            2)
-                # Remove Twilio lines from unit
-                sudo sed -i '/Environment=TWILIO_/d' "$UNIT_FILE"
-                sudo sed -i '/Environment=ALERT_TO_PHONE=/d' "$UNIT_FILE"
-                reload_daemon
-                print_ok "SMS alerts disabled."
-                return ;;
-            3) print_info "Cancelled."; return ;;
-        esac
+    if [[ -n "$current_token" ]]; then
+        echo -e "  Telegram alerts are currently ${GREEN}enabled${RESET}."
+        echo -e "  Chat ID: ${BOLD}${current_chat}${RESET}"
     else
-        echo -e "  SMS alerts are currently ${YELLOW}disabled${RESET}."
-        echo ""
-        if ! ask_yn "Enable SMS alerts?"; then
-            print_info "No change."
-            return
-        fi
+        echo -e "  Telegram alerts are currently ${YELLOW}disabled${RESET}."
     fi
 
     echo ""
-    echo -e "  ${CYAN}Find these values at console.twilio.com → Account Info${RESET}"
+    echo -e "  ${CYAN}Press ENTER on any field to keep the current value.${RESET}"
     echo ""
 
-    local sid token from_num to_num
-    while true; do
-        ask "Twilio Account SID (starts with AC)" sid
-        [[ "$sid" == AC* ]] && break
-        print_warn "SID should start with AC."
-    done
-    while true; do
-        ask_secret "Twilio Auth Token" token
-        [[ -n "$token" ]] && break
-        print_warn "Cannot be empty."
-    done
-    while true; do
-        ask "Twilio 'From' number  (e.g. +15005550006)" from_num
-        [[ "$from_num" == +* ]] && break
-        print_warn "Must start with + and country code."
-    done
-    while true; do
-        ask "Your mobile number    (e.g. +18135550000)" to_num
-        [[ "$to_num" == +* ]] && break
-        print_warn "Must start with + and country code."
-    done
+    read -p "    Bot Token [ENTER = no change]: " new_token
+    read -p "    Chat ID   [ENTER = no change, current: ${current_chat}]: " new_chat
 
-    # Remove any existing Twilio lines first, then add fresh
-    sudo sed -i '/Environment=TWILIO_/d' "$UNIT_FILE"
-    sudo sed -i '/Environment=ALERT_TO_PHONE=/d' "$UNIT_FILE"
+    local changed=false
+    if [[ -n "$new_token" ]]; then
+        set_env "TELEGRAM_TOKEN" "$new_token"
+        changed=true
+    fi
+    if [[ -n "$new_chat" ]]; then
+        set_env "TELEGRAM_CHAT_ID" "$new_chat"
+        changed=true
+    fi
 
-    set_env "TWILIO_ACCOUNT_SID"  "$sid"
-    set_env "TWILIO_AUTH_TOKEN"   "$token"
-    set_env "TWILIO_FROM_NUMBER"  "$from_num"
-    set_env "ALERT_TO_PHONE"      "$to_num"
-    reload_daemon
-    print_ok "SMS alerts configured."
+    if [[ "$changed" == "true" ]]; then
+        reload_daemon
+        print_ok "Telegram settings updated."
+    else
+        print_info "No changes made."
+    fi
 }
 
 restart_prompt() {
@@ -348,7 +324,7 @@ while true; do
     echo -e "  ${BOLD}2.${RESET}  Risk per trade      (currently: \$$(get_env OT_RISK_USD))"
     echo -e "  ${BOLD}3.${RESET}  Paper / Live mode   (currently: $([ "$(get_env OT_PAPER_TRADING)" = "False" ] && echo "🔴 LIVE" || echo "📄 PAPER"))"
     echo -e "  ${BOLD}4.${RESET}  TastyTrade credentials"
-    echo -e "  ${BOLD}5.${RESET}  SMS alert settings"
+    echo -e "  ${BOLD}5.${RESET}  Telegram alerts     (chat: $(get_env TELEGRAM_CHAT_ID))"
     echo -e "  ${BOLD}6.${RESET}  Done"
     echo ""
     read -p "    Select [1-6]: " menu_choice
@@ -358,7 +334,7 @@ while true; do
         2) change_risk;       CHANGED=true ;;
         3) change_mode;       CHANGED=true ;;
         4) change_tt_credentials; CHANGED=true ;;
-        5) change_twilio;    CHANGED=true ;;
+        5) change_telegram;  CHANGED=true ;;
         6) break ;;
         *) print_warn "Please enter a number between 1 and 6." ;;
     esac
