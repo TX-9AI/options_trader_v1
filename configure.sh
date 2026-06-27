@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # ============================================================
-#  options_trader v1.1  —  Live Configuration Manager
+#  options_trader v1.4  —  Live Configuration Manager
+#  v1.0 — original release
 #  v1.1 — 2026-06-27 — replaced SMS/Twilio with Telegram
+#  v1.2 — 2026-06-27 — swapped menu order: Telegram now 4, TT credentials now 5
+#  v1.3 — 2026-06-27 — fixed menu display lines to match handler order
+#  v1.4 — 2026-06-27 — auto restart on exit if changes made, no prompt
 #
 #  Run this anytime to view or change bot settings.
 #  Changes take effect on the NEXT bot start — the bot is
@@ -272,24 +276,15 @@ change_telegram() {
     fi
 }
 
-restart_prompt() {
+auto_restart() {
     echo ""
+    echo "  Applying changes and restarting bot..."
+    sudo systemctl restart "$SERVICE_NAME"
+    sleep 4
     if bot_is_running; then
-        print_warn "The bot is currently running with the OLD settings."
-        echo ""
-        if ask_yn "Restart now to apply changes?"; then
-            sudo systemctl restart "$SERVICE_NAME"
-            sleep 1
-            if bot_is_running; then
-                print_ok "Bot restarted successfully with new settings."
-            else
-                print_warn "Bot may not have started — check: journalctl -u ${SERVICE_NAME} -f"
-            fi
-        else
-            print_info "Changes will apply on the next manual start."
-        fi
+        print_ok "Bot restarted successfully with new settings."
     else
-        print_info "Start the bot when ready:  sudo systemctl start ${SERVICE_NAME}"
+        print_warn "Bot failed to start — check: journalctl -u ${SERVICE_NAME} -n 20"
     fi
 }
 
@@ -323,8 +318,8 @@ while true; do
     echo -e "  ${BOLD}1.${RESET}  Instrument          (currently: $(get_env OT_INSTRUMENT))"
     echo -e "  ${BOLD}2.${RESET}  Risk per trade      (currently: \$$(get_env OT_RISK_USD))"
     echo -e "  ${BOLD}3.${RESET}  Paper / Live mode   (currently: $([ "$(get_env OT_PAPER_TRADING)" = "False" ] && echo "🔴 LIVE" || echo "📄 PAPER"))"
-    echo -e "  ${BOLD}4.${RESET}  TastyTrade credentials"
-    echo -e "  ${BOLD}5.${RESET}  Telegram alerts     (chat: $(get_env TELEGRAM_CHAT_ID))"
+    echo -e "  ${BOLD}4.${RESET}  Telegram alerts     (chat: $(get_env TELEGRAM_CHAT_ID))"
+    echo -e "  ${BOLD}5.${RESET}  TastyTrade credentials"
     echo -e "  ${BOLD}6.${RESET}  Done"
     echo ""
     read -p "    Select [1-6]: " menu_choice
@@ -333,8 +328,8 @@ while true; do
         1) change_instrument; CHANGED=true ;;
         2) change_risk;       CHANGED=true ;;
         3) change_mode;       CHANGED=true ;;
-        4) change_tt_credentials; CHANGED=true ;;
-        5) change_telegram;  CHANGED=true ;;
+        4) change_telegram;       CHANGED=true ;;
+        5) change_tt_credentials; CHANGED=true ;;
         6) break ;;
         *) print_warn "Please enter a number between 1 and 6." ;;
     esac
@@ -344,7 +339,7 @@ done
 if [[ "$CHANGED" == "true" ]]; then
     echo ""
     show_config
-    restart_prompt
+    auto_restart
 fi
 
 echo ""
