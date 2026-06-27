@@ -1,5 +1,8 @@
 """
-config.py — Central configuration for options_trader v1.0
+config.py — options_trader v1.1
+v1.0 — original release
+v1.1 — 2026-06-27 — remove Twilio, fix SWEEP_TARGET_DELTA to 0.08,
+        remove Grade C, add BUTTERFLY_ENTRY_CUTOFF_ET
 
 All secrets come from environment variables — never from hardcoded values
 or editable files. The setup_ec2.sh script writes them into the systemd
@@ -31,27 +34,23 @@ def _optional(key: str, default: str = "") -> str:
 
 
 # ─── TASTYTRADE CREDENTIALS (from environment) ────────────────────────────────
-# These are never read at import time — only when first used —
-# so the bot can start up and display the config before connecting.
+# Never read at import time — only when first used.
 
 def get_tt_client_secret()  -> str: return _require("TT_CLIENT_SECRET")
 def get_tt_refresh_token()  -> str: return _require("TT_REFRESH_TOKEN")
 def get_tt_account_number() -> str: return _require("TT_ACCOUNT_NUMBER")
 
-# ─── TWILIO (optional — SMS alerts) ──────────────────────────────────────────
-def get_twilio_sid()        -> str: return _optional("TWILIO_ACCOUNT_SID")
-def get_twilio_token()      -> str: return _optional("TWILIO_AUTH_TOKEN")
-def get_twilio_from()       -> str: return _optional("TWILIO_FROM_NUMBER")
-def get_alert_phone()       -> str: return _optional("ALERT_TO_PHONE")
 
-def sms_configured() -> bool:
-    return all([get_twilio_sid(), get_twilio_token(),
-                get_twilio_from(), get_alert_phone()])
+# ─── TELEGRAM ALERTS (from environment) ──────────────────────────────────────
+
+def get_telegram_token()    -> str: return _optional("TELEGRAM_TOKEN")
+def get_telegram_chat_id()  -> str: return _optional("TELEGRAM_CHAT_ID")
+
+def telegram_configured() -> bool:
+    return bool(get_telegram_token() and get_telegram_chat_id())
 
 
 # ─── INSTRUMENT SELECTION ─────────────────────────────────────────────────────
-# Set by setup_ec2.sh via OT_INSTRUMENT env var.
-# Operator selects at setup — never edits this file.
 
 INSTRUMENT          = os.environ.get("OT_INSTRUMENT", "QQQ")
 
@@ -64,23 +63,20 @@ STRIKE_INCREMENT    = STRIKE_INCREMENTS.get(INSTRUMENT, 1)
 CONTRACT_MULTIPLIER = 100
 
 # ─── ACCOUNT & RISK ───────────────────────────────────────────────────────────
-# Set by setup_ec2.sh via OT_RISK_USD env var.
 
 RISK_PER_TRADE_USD  = float(os.environ.get("OT_RISK_USD", "200"))
 MAX_LOSS_PCT        = 0.25
 SESSION_LOSS_LIMIT  = 2
 
 # ─── PAPER TRADING ────────────────────────────────────────────────────────────
-# Default TRUE. Operator explicitly switches to live via setup_ec2.sh.
-# The string "False" (from env) is the only way to enable live trading.
 
 PAPER_TRADING       = os.environ.get("OT_PAPER_TRADING", "True") != "False"
 
 # ─── VIX / IV THRESHOLDS ──────────────────────────────────────────────────────
 
 VIX_LOW_THRESHOLD           = 15
-VIX_ELEVATED_THRESHOLD      = 20   # VIX above this = elevated vol (disables butterfly)
-VIX_CRISIS_THRESHOLD        = 30   # VIX above this = crisis / no new entries
+VIX_ELEVATED_THRESHOLD      = 20
+VIX_CRISIS_THRESHOLD        = 30
 VIX_BUTTERFLY_DISABLE       = 20
 VIX_BUTTERFLY_HALF_SIZE     = 15
 VIX_NO_ENTRY_THRESHOLD      = 30
@@ -88,12 +84,13 @@ IV_RANK_HIGH                = 50
 
 # ─── SESSION / TIME RULES ─────────────────────────────────────────────────────
 
-TIMEZONE                = "US/Eastern"
-RTH_OPEN_ET             = (9, 30)
-RTH_CLOSE_ET            = (16, 0)
-HARD_CLOSE_ET           = (15, 45)
-NO_ENTRY_AFTER_ET       = (14, 0)
-ORB_WINDOW_MINUTES      = 5
+TIMEZONE                    = "US/Eastern"
+RTH_OPEN_ET                 = (9, 30)
+RTH_CLOSE_ET                = (16, 0)
+HARD_CLOSE_ET               = (15, 45)
+NO_ENTRY_AFTER_ET           = (14, 0)
+BUTTERFLY_ENTRY_CUTOFF_ET   = (15, 0)
+ORB_WINDOW_MINUTES          = 5
 
 # ─── ORB STRATEGY ─────────────────────────────────────────────────────────────
 
@@ -105,8 +102,8 @@ FED_DAY_ORB_BOOST           = 0.20
 
 # ─── SWEEP REVERSAL STRATEGY ──────────────────────────────────────────────────
 
-SWEEP_TARGET_DELTA          = 0.20
-SWEEP_DELTA_TOLERANCE       = 0.05
+SWEEP_TARGET_DELTA          = 0.08
+SWEEP_DELTA_TOLERANCE       = 0.03
 SWEEP_MIN_REJECTION_PCT     = 0.003
 SWEEP_MAX_AGE_BARS          = 8
 
@@ -137,8 +134,7 @@ REGIME_REASSESS_MINUTES     = 5
 
 GRADE_A_MIN_SCORE           = 0.78
 GRADE_B_MIN_SCORE           = 0.55
-GRADE_SIZE_MULTIPLIER       = {"A": 1.5, "B": 1.0, "C": 0.5}
-TRADE_GRADE_C               = True
+GRADE_SIZE_MULTIPLIER       = {"A": 1.5, "B": 1.0}
 
 # ─── VOLATILITY / TREND ───────────────────────────────────────────────────────
 
@@ -171,7 +167,7 @@ MIN_SWING_SIZE_ATR          = 0.5
 FVG_MIN_SIZE_PCT            = 0.001
 SR_TOUCH_MIN                = 2
 SR_ZONE_PCT                 = 0.002
-ORDER_BLOCK_LOOKBACK        = 20   # Bars to look back when identifying order blocks
+ORDER_BLOCK_LOOKBACK        = 20
 
 # ─── ORDER EXECUTION ──────────────────────────────────────────────────────────
 
@@ -229,7 +225,7 @@ BOT_NAME                    = os.environ.get("OT_BOT_NAME", "OptionsTrader")
 
 @dataclass
 class SessionConfig:
-    """Runtime session config — populated at startup by setup_ec2.sh prompts."""
+    """Runtime session config — populated at startup."""
     paper_trading:      bool    = True
     instrument:         str     = "QQQ"
     risk_per_trade_usd: float   = 200.0

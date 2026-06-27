@@ -22,14 +22,14 @@ Institutional-grade 0DTE options trading bot. Classifies intraday market regime 
 **ORB (Opening Range Breakout)**
 - 5-minute opening range locked at 9:30 ET
 - Entry on confirmed 1-minute close outside range + retest
-- Debit call/put spread targeting 100% premium gain
-- Valid until noon ET | Entries cut off at 2:00 PM ET
+- Long calls or puts leveraging gamma on confirmed directional breakouts
+- ORB entries valid until noon ET only
 
 **Sweep Reversal**
 - Detects liquidity sweeps at key levels
-- OTM options targeting delta ~0.08 (pure gamma play)
+- OTM options selected by delta targeting (pure gamma play)
 - BOS (Break of Structure) exit on 1-minute chart
-- Entries cut off at 2:00 PM ET
+- Directional entries cut off at 2:00 PM ET
 
 **Debit Butterfly (Compression + GEX Pinning)**
 - Fires only in COMPRESSION regime (Bollinger squeeze + low ADX)
